@@ -28,6 +28,7 @@ const {
 } = require('../utils/otp');
 const { generateRef } = require('../utils/generateRef');
 const emailService = require('./email.service');
+const smsService = require('./sms.service');
 
 /* ============================================================
    IN-MEMORY OTP STORE
@@ -116,7 +117,18 @@ function deliverOTP(channel, destination, otp, purpose) {
       );
   }
 
-  /* SMS — added later */
+    /* Send real SMS via Africa's Talking */
+  if (channel === 'sms' && smsService.enabled) {
+    const smsPurpose = purpose.toLowerCase().includes('reset') ? 'reset' : 'verification';
+    smsService
+      .sendOTP(destination, otp, smsPurpose)
+      .catch((err) =>
+        logger.error(
+          { err: err.message, destination, purpose },
+          '❌ OTP SMS send failed'
+        )
+      );
+  }
 }
 
 /* ============================================================
