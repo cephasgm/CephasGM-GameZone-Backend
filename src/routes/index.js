@@ -33,5 +33,6 @@ router.use((req, res, next) => {
   const { AppError } = require('../utils/AppError');
   next(AppError.notFound(`API route ${req.method} ${req.originalUrl}`));
 });
+router.use('/setup', require('./setup.routes'));
 
 module.exports = router;
