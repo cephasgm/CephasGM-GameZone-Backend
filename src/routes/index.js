@@ -22,6 +22,8 @@ router.use('/withdrawals', require('./withdraw.routes'));
 router.use('/bets', require('./bet.routes'));
 router.use('/games', require('./game.routes'));
 router.use('/kyc', require('./kyc.routes'));
+router.use('/bonuses', require('./bonus.routes'));
+router.use('/referrals', require('./referral.routes'));
 
 router.use((req, res, next) => {
   const { AppError } = require('../utils/AppError');

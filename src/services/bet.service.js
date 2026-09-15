@@ -27,6 +27,8 @@ const prisma = require('../config/database');
 const { AppError } = require('../utils/AppError');
 const { generateRef } = require('../utils/generateRef');
 const walletService = require('./wallet.service');
+const referralService = require('./referral.service');
+const bonusService = require('./bonus.service');
 
 /* ============================================================
    HELPERS
@@ -151,6 +153,15 @@ async function place(userId, input) {
     { userId, reference, stake: stakeAmt.toString(), odds: totalOdds.toString(), type },
     '🎯 Bet placed'
   );
+
+  /* Fire-and-forget: advance bonus wager progress + credit referral commission */
+  Promise.resolve()
+    .then(() => bonusService.applyWager(userId, stakeAmt.toString()))
+    .catch((err) => logger.error({ userId, err: err.message }, 'Bonus wager update failed'));
+
+  Promise.resolve()
+    .then(() => referralService.creditCommission(userId, stakeAmt.toString()))
+    .catch((err) => logger.error({ userId, err: err.message }, 'Referral commission failed'));
 
   return publicBet(bet);
 }
