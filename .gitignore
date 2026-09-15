@@ -93,3 +93,6 @@ pgtest.js
 tmp-*.js
 test-*.js
 !tests/**/*.js
+# Test artifacts
+register.json
+*.tmp.json
