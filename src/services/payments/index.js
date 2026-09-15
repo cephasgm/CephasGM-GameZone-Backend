@@ -21,7 +21,7 @@ const REGISTRY = {
   AIRTEL_MONEY:   mockProvider,
   FLUTTERWAVE:    flutterwaveProvider,
   CARD:           flutterwaveProvider,
-  BANK_TRANSFER:  flutterwaveProvider,
+  BANK_TRANSFER:  mockProvider,
   CRYPTO:         mockProvider,
 };
 
