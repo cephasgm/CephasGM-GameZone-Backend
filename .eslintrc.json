@@ -1,0 +1,143 @@
+{
+  "root": true,
+
+  "env": {
+    "node": true,
+    "es2022": true,
+    "jest": true
+  },
+
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script",
+    "ecmaFeatures": {
+      "impliedStrict": true
+    }
+  },
+
+  "extends": [
+    "eslint:recommended",
+    "plugin:node/recommended",
+    "prettier"
+  ],
+
+  "plugins": ["node"],
+
+  "settings": {
+    "node": {
+      "tryExtensions": [".js", ".json", ".node"]
+    }
+  },
+
+  "rules": {
+    /* ------------------------------------------------------
+       Possible errors
+       ------------------------------------------------------ */
+    "no-console": "off",
+    "no-debugger": "warn",
+    "no-unused-vars": [
+      "warn",
+      {
+        "args": "after-used",
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrors": "none"
+      }
+    ],
+    "no-undef": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-unreachable": "error",
+    "no-constant-condition": ["error", { "checkLoops": false }],
+
+    /* ------------------------------------------------------
+       Best practices
+       ------------------------------------------------------ */
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "curly": ["error", "multi-line"],
+    "no-else-return": ["warn", { "allowElseIf": false }],
+    "no-implicit-coercion": ["warn", { "allow": ["!!", "+"] }],
+    "no-return-await": "warn",
+    "no-throw-literal": "error",
+    "prefer-promise-reject-errors": "error",
+    "require-await": "warn",
+    "no-var": "error",
+    "prefer-const": ["error", { "destructuring": "all" }],
+    "no-shadow": ["warn", { "builtinGlobals": false, "hoist": "functions" }],
+
+    /* ------------------------------------------------------
+       Style (mostly handled by Prettier, but a few ESLint ones)
+       ------------------------------------------------------ */
+    "quotes": [
+      "error",
+      "single",
+      { "avoidEscape": true, "allowTemplateLiterals": true }
+    ],
+    "semi": ["error", "always"],
+    "comma-dangle": ["error", "always-multiline"],
+    "object-curly-spacing": ["error", "always"],
+    "array-bracket-spacing": ["error", "never"],
+    "arrow-spacing": ["error", { "before": true, "after": true }],
+    "keyword-spacing": ["error", { "before": true, "after": true }],
+    "space-before-function-paren": [
+      "error",
+      {
+        "anonymous": "always",
+        "named": "never",
+        "asyncArrow": "always"
+      }
+    ],
+
+    /* ------------------------------------------------------
+       Node plugin — important for CommonJS
+       ------------------------------------------------------ */
+    "node/no-unsupported-features/es-syntax": [
+      "error",
+      { "version": ">=20.0.0" }
+    ],
+    "node/no-missing-require": "error",
+    "node/no-unpublished-require": [
+      "error",
+      {
+        "allowModules": [
+          "@prisma/client",
+          "prisma"
+        ]
+      }
+    ],
+    "node/no-extraneous-require": "error",
+    "node/no-deprecated-api": "warn",
+    "node/process-exit-as-throw": "error",
+    "node/shebang": "error",
+    "node/handle-callback-err": ["warn", "^(err|error)$"]
+  },
+
+  "overrides": [
+    {
+      "files": ["tests/**/*.js"],
+      "env": {
+        "jest": true
+      },
+      "rules": {
+        "no-unused-vars": "off",
+        "node/no-unpublished-require": "off"
+      }
+    },
+    {
+      "files": ["prisma/seed.js", "prisma/**/*.js"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ],
+
+  "ignorePatterns": [
+    "node_modules/",
+    "dist/",
+    "build/",
+    "coverage/",
+    "logs/",
+    "prisma/migrations/",
+    "*.min.js"
+  ]
+}

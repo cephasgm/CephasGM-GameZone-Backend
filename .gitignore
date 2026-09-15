@@ -74,6 +74,9 @@ public/uploads/
 docker-compose.override.yml
 .docker/
 
+# Docker compose override for local personal config
+docker-compose.override.yml
+
 # Misc
 .eslintcache
 .prettiercache
