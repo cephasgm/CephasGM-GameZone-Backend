@@ -27,6 +27,7 @@ router.use('/referrals', require('./referral.routes'));
 router.use('/notifications', require('./notification.routes'));
 router.use('/support', require('./support.routes'));
 router.use('/leaderboard', require('./leaderboard.routes'));
+router.use('/admin', require('./admin.routes'));
 
 router.use((req, res, next) => {
   const { AppError } = require('../utils/AppError');
