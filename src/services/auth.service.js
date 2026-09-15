@@ -2,17 +2,6 @@
  * ============================================================
  * CephasGM GameZone — Auth Service
  * ============================================================
- * Business logic for:
- *   • register           — create account + wallet + referral
- *   • login              — verify credentials, issue tokens
- *   • refresh            — rotate access token
- *   • logout             — revoke session
- *   • verifyEmail        — confirm OTP
- *   • forgotPassword     — issue reset OTP
- *   • resetPassword      — validate OTP, change password
- *   • changePassword     — authenticated password change
- *   • getMe              — return full current-user profile
- * ============================================================
  */
 
 'use strict';
@@ -38,12 +27,26 @@ const {
   isOTPExpired,
 } = require('../utils/otp');
 const { generateRef } = require('../utils/generateRef');
+const emailService = require('./email.service');
+
+/* ============================================================
+   IN-MEMORY OTP STORE
+   ============================================================ */
+const otpStore = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of otpStore.entries()) {
+    if (record.expiresAt && record.expiresAt.getTime() < now) {
+      otpStore.delete(key);
+    }
+  }
+}, 5 * 60 * 1000).unref();
 
 /* ============================================================
    HELPERS
    ============================================================ */
 
-/* Generate a unique referral code (retries on collision) */
 async function generateUniqueReferralCode() {
   for (let i = 0; i < 5; i++) {
     const code = crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -53,7 +56,6 @@ async function generateUniqueReferralCode() {
   throw new AppError('Could not generate unique referral code', 500, 'REFERRAL_GEN_FAILED');
 }
 
-/* Public user view — never leak passwordHash or sensitive fields */
 function publicUser(user) {
   return {
     id: user.id,
@@ -77,11 +79,10 @@ function publicUser(user) {
   };
 }
 
-/* Store refresh token on Session row */
 async function createSession(userId, refreshToken, req) {
   const expiresAt = getRefreshExpiryDate();
 
-  const session = await prisma.session.create({
+  return prisma.session.create({
     data: {
       userId,
       refreshToken,
@@ -91,19 +92,31 @@ async function createSession(userId, refreshToken, req) {
       deviceName: req.headers['x-device-name'] || null,
     },
   });
-
-  return session;
 }
 
-/* Log OTP in dev (instead of sending email/SMS until those are wired) */
 function deliverOTP(channel, destination, otp, purpose) {
+  /* Always log in dev */
   if (config.isDev) {
     logger.info(
       { channel, destination, otp, purpose },
       `📩 [DEV OTP] ${purpose} → ${channel}:${destination} — CODE: ${otp}`
     );
   }
-  // TODO (Wave 5): wire real email.service / sms.service here
+
+  /* Send real email via Resend */
+  if (channel === 'email' && emailService.enabled) {
+    const emailPurpose = purpose.toLowerCase().includes('reset') ? 'reset' : 'verification';
+    emailService
+      .sendOTP(destination, otp, emailPurpose)
+      .catch((err) =>
+        logger.error(
+          { err: err.message, destination, purpose },
+          '❌ OTP email send failed'
+        )
+      );
+  }
+
+  /* SMS — added later */
 }
 
 /* ============================================================
@@ -120,7 +133,6 @@ async function register(input, req) {
     currency,
   } = input;
 
-  // Check for existing user
   if (email) {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -134,7 +146,6 @@ async function register(input, req) {
     }
   }
 
-  // Resolve referrer if code provided
   let referredById = null;
   if (referralCode) {
     const referrer = await prisma.user.findUnique({
@@ -146,7 +157,6 @@ async function register(input, req) {
   const passwordHash = await hashPassword(password);
   const ownReferralCode = await generateUniqueReferralCode();
 
-  // Create user + wallet + optional referral record in a transaction
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
@@ -184,17 +194,16 @@ async function register(input, req) {
     return user;
   });
 
-  // Send email verification OTP
+  /* OTP for email verification */
   const otp = generateOTP();
   const otpHash = await hashOTP(otp);
 
-  // Store OTP transiently in-memory for now (later: dedicated table or Redis)
   otpStore.set(`verify:${result.id}`, {
     hash: otpHash,
     expiresAt: getOTPExpiry(),
   });
 
-   if (result.email) {
+  if (result.email) {
     deliverOTP('email', result.email, otp, 'Email verification');
   } else if (result.phone) {
     deliverOTP('sms', result.phone, otp, 'Phone verification');
@@ -202,8 +211,6 @@ async function register(input, req) {
 
   const user = publicUser(result);
 
-  // In development, expose the OTP in the response so you can test
-  // without digging through terminal logs.
   if (config.isDev) {
     user._devOtp = otp;
     user._devNote = 'OTP shown only because NODE_ENV=development';
@@ -241,23 +248,17 @@ async function login(input, req) {
     throw new AppError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
   }
 
-  // Issue tokens
   const accessToken = signAccessToken(user);
   const refreshToken = signRefreshToken(user, 'pending');
 
-  // Create session
   const session = await createSession(user.id, refreshToken, req);
-
-  // Re-issue refresh with the actual session id
   const finalRefresh = signRefreshToken(user, session.id);
 
-  // Update refresh token on the session row
   await prisma.session.update({
     where: { id: session.id },
     data: { refreshToken: finalRefresh },
   });
 
-  // Update last login
   await prisma.user.update({
     where: { id: user.id },
     data: {
@@ -301,10 +302,8 @@ async function refresh(refreshToken, req) {
     throw new AppError('Account is not active', 403, 'ACCOUNT_INACTIVE');
   }
 
-  // Rotate the access token
   const accessToken = signAccessToken(user);
 
-  // Update last-used timestamp
   await prisma.session.update({
     where: { id: session.id },
     data: { lastUsedAt: new Date() },
@@ -375,6 +374,15 @@ async function verifyEmail({ email, otp }) {
     },
   });
 
+  /* Send welcome email (fire-and-forget) */
+  if (updated.email && emailService.enabled) {
+    emailService
+      .sendWelcome(updated.email, updated.fullName)
+      .catch((err) =>
+        logger.error({ err: err.message, userId: updated.id }, '❌ Welcome email failed')
+      );
+  }
+
   return publicUser(updated);
 }
 
@@ -384,7 +392,6 @@ async function verifyEmail({ email, otp }) {
 async function resendVerification({ email }) {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    // Don't leak account existence — always return success
     return { sent: true };
   }
   if (user.emailVerified) {
@@ -411,7 +418,6 @@ async function resendVerification({ email }) {
 async function forgotPassword({ email }) {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    // Don't leak account existence
     return { sent: true };
   }
 
@@ -461,7 +467,6 @@ async function resetPassword({ email, otp, newPassword }) {
       where: { id: user.id },
       data: { passwordHash },
     }),
-    // Revoke all sessions so existing logins are killed
     prisma.session.updateMany({
       where: { userId: user.id, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -517,25 +522,6 @@ async function getMe(userId) {
     wallets: user.wallets,
   };
 }
-
-/* ============================================================
-   IN-MEMORY OTP STORE
-   ------------------------------------------------------------
-   Temporary — will be replaced with a proper table or Redis
-   in a later wave. Sufficient for development and single-server
-   deployments.
-   ============================================================ */
-const otpStore = new Map();
-
-// Cleanup expired OTPs every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, record] of otpStore.entries()) {
-    if (record.expiresAt && record.expiresAt.getTime() < now) {
-      otpStore.delete(key);
-    }
-  }
-}, 5 * 60 * 1000).unref();
 
 module.exports = {
   register,
