@@ -1,0 +1,694 @@
+// ============================================================
+// CephasGM GameZone — Database Schema
+// ============================================================
+// PostgreSQL via Prisma 5.
+// Run `npx prisma migrate dev --name init` after saving to create
+// all tables, then `npx prisma generate` to build the client.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+enum UserStatus {
+  PENDING      // registered, email not verified
+  ACTIVE       // normal
+  SUSPENDED    // temporary block
+  BANNED       // permanent block
+  CLOSED       // user chose to close
+}
+
+enum KYCStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VIPTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+  DIAMOND
+}
+
+enum AuthProvider {
+  EMAIL
+  PHONE
+  GOOGLE
+  FACEBOOK
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  BET_PLACED
+  BET_WON
+  BET_REFUND
+  BONUS_CREDIT
+  BONUS_WAGER
+  REFERRAL_COMMISSION
+  ADJUSTMENT      // admin manual adjustment
+  FEE
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REVERSED
+}
+
+enum PaymentMethod {
+  MPESA
+  TIGO_PESA
+  AIRTEL_MONEY
+  FLUTTERWAVE
+  CARD
+  BANK_TRANSFER
+  CRYPTO
+}
+
+enum BetType {
+  SINGLE
+  MULTIPLE
+  SYSTEM
+  VIRTUAL
+  CASINO
+}
+
+enum BetStatus {
+  PENDING
+  WON
+  LOST
+  CASHED_OUT
+  VOID
+  CANCELLED
+}
+
+enum GameType {
+  VIRTUAL_FOOTBALL
+  VIRTUAL_HORSE_RACING
+  VIRTUAL_CAR_RACING
+  VIRTUAL_NETBALL
+  AVIATOR
+  CASINO_SLOTS
+  CASINO_ROULETTE
+  CASINO_BLACKJACK
+  LIVE_CASINO
+}
+
+enum RoundStatus {
+  SCHEDULED
+  BETTING_OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BonusType {
+  WELCOME
+  DEPOSIT_MATCH
+  FREE_BET
+  CASHBACK
+  LOYALTY
+  REFERRAL
+  PROMO_CODE
+}
+
+enum BonusStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  CANCELLED
+}
+
+enum NotificationType {
+  SYSTEM
+  BET_SETTLED
+  DEPOSIT
+  WITHDRAWAL
+  BONUS
+  KYC
+  PROMO
+  SECURITY
+}
+
+enum TicketStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// ============================================================
+// USER & AUTHENTICATION
+// ============================================================
+
+model User {
+  id                String        @id @default(cuid())
+  email             String?       @unique
+  phone             String?       @unique
+  username          String?       @unique
+  passwordHash      String?
+  fullName          String?
+  avatarUrl         String?
+  dateOfBirth       DateTime?
+  country           String?       @default("TZ")
+  city              String?
+  address           String?
+  currency          String        @default("TZS")
+  language          String        @default("en")
+
+  role              UserRole      @default(USER)
+  status            UserStatus    @default(PENDING)
+  emailVerified     Boolean       @default(false)
+  phoneVerified     Boolean       @default(false)
+  emailVerifiedAt   DateTime?
+  phoneVerifiedAt   DateTime?
+
+  kycStatus         KYCStatus     @default(NOT_SUBMITTED)
+  kycVerifiedAt     DateTime?
+  kycRejectionNote  String?
+
+  vipTier           VIPTier       @default(BRONZE)
+  vipPoints         Int           @default(0)
+  totalWagered      Decimal       @default(0) @db.Decimal(20, 2)
+  totalDeposited    Decimal       @default(0) @db.Decimal(20, 2)
+  totalWithdrawn    Decimal       @default(0) @db.Decimal(20, 2)
+  totalWon          Decimal       @default(0) @db.Decimal(20, 2)
+
+  referralCode      String        @unique
+  referredById      String?
+  referredBy        User?         @relation("UserReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals         User[]        @relation("UserReferrals")
+
+  twoFactorEnabled  Boolean       @default(false)
+  twoFactorSecret   String?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+
+  // Relations
+  wallets           Wallet[]
+  transactions      Transaction[]
+  bets              Bet[]
+  deposits          Deposit[]
+  withdrawals       Withdrawal[]
+  kycDocuments      KYCDocument[]
+  bonuses           UserBonus[]
+  notifications     Notification[]
+  sessions          Session[]
+  auditLogs         AuditLog[]    @relation("AuditActor")
+  referralsMade     Referral[]    @relation("Referrer")
+  referralsReceived Referral[]    @relation("Referred")
+  tickets           SupportTicket[]
+  ticketsReplied    TicketMessage[]
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+
+  @@index([email])
+  @@index([phone])
+  @@index([username])
+  @@index([referralCode])
+  @@index([status])
+  @@index([role])
+  @@index([vipTier])
+  @@map("users")
+}
+
+model Session {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  refreshToken   String        @unique
+  userAgent      String?
+  ipAddress      String?
+  deviceName     String?
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  lastUsedAt     DateTime      @default(now())
+
+  createdAt      DateTime      @default(now())
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@map("sessions")
+}
+
+// ============================================================
+// WALLET & TRANSACTIONS
+// ============================================================
+
+model Wallet {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  currency        String        @default("TZS")
+  balance         Decimal       @default(0) @db.Decimal(20, 2)
+  lockedBalance   Decimal       @default(0) @db.Decimal(20, 2) // funds reserved for pending bets
+  bonusBalance    Decimal       @default(0) @db.Decimal(20, 2) // non-withdrawable bonus money
+
+  isPrimary       Boolean       @default(true)
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([userId, currency])
+  @@index([userId])
+  @@map("wallets")
+}
+
+model Transaction {
+  id              String            @id @default(cuid())
+  userId          String
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletId        String?
+
+  type            TransactionType
+  status          TransactionStatus @default(PENDING)
+
+  amount          Decimal           @db.Decimal(20, 2)
+  balanceBefore   Decimal           @db.Decimal(20, 2)
+  balanceAfter    Decimal           @db.Decimal(20, 2)
+  currency        String            @default("TZS")
+
+  reference       String            @unique
+  externalRef     String?           // gateway transaction id
+
+  description     String?
+  metadata        Json?
+
+  // Optional link to a bet, deposit, withdrawal, bonus, or referral
+  betId           String?
+  depositId       String?
+  withdrawalId    String?
+  bonusId         String?
+  referralId      String?
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([reference])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+// ============================================================
+// DEPOSITS & WITHDRAWALS
+// ============================================================
+
+model Deposit {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount            Decimal         @db.Decimal(20, 2)
+  currency          String          @default("TZS")
+  method            PaymentMethod
+  status            TransactionStatus @default(PENDING)
+
+  reference         String          @unique
+  externalRef       String?
+  phoneNumber       String?
+  accountNumber     String?
+
+  gatewayResponse   Json?
+  failureReason     String?
+
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([reference])
+  @@map("deposits")
+}
+
+model Withdrawal {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount            Decimal         @db.Decimal(20, 2)
+  fee               Decimal         @default(0) @db.Decimal(20, 2)
+  netAmount         Decimal         @db.Decimal(20, 2)
+  currency          String          @default("TZS")
+  method            PaymentMethod
+  status            TransactionStatus @default(PENDING)
+
+  reference         String          @unique
+  externalRef       String?
+
+  // Destination
+  phoneNumber       String?
+  accountNumber     String?
+  accountName       String?
+  bankName          String?
+
+  // Review
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  rejectionNote     String?
+
+  processedAt       DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([reference])
+  @@map("withdrawals")
+}
+
+// ============================================================
+// BETTING
+// ============================================================
+
+model Bet {
+  id              String          @id @default(cuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type            BetType         @default(SINGLE)
+  status          BetStatus       @default(PENDING)
+
+  stake           Decimal         @db.Decimal(20, 2)
+  totalOdds       Decimal         @db.Decimal(10, 4)
+  potentialWin    Decimal         @db.Decimal(20, 2)
+  actualWin       Decimal?        @db.Decimal(20, 2)
+  cashoutAmount   Decimal?        @db.Decimal(20, 2)
+
+  currency        String          @default("TZS")
+  reference       String          @unique
+
+  gameType        GameType?       // populated for virtual games
+  roundId         String?         // virtual round reference
+
+  // Settlement
+  settledAt       DateTime?
+  settledBy       String?
+
+  // Metadata (json of selections)
+  metadata        Json?
+
+  selections      BetSelection[]
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([reference])
+  @@index([createdAt])
+  @@map("bets")
+}
+
+model BetSelection {
+  id            String      @id @default(cuid())
+  betId         String
+  bet           Bet         @relation(fields: [betId], references: [id], onDelete: Cascade)
+
+  eventId       String      // sports match id, virtual round, etc.
+  eventName     String
+  market        String      // e.g. "1X2", "Over/Under"
+  selection     String      // e.g. "Arsenal", "Over 2.5"
+  odds          Decimal     @db.Decimal(10, 4)
+  status        BetStatus   @default(PENDING)
+
+  eventStartAt  DateTime?
+  result        String?     // "WON", "LOST", "VOID"
+
+  createdAt     DateTime    @default(now())
+
+  @@index([betId])
+  @@index([eventId])
+  @@map("bet_selections")
+}
+
+// ============================================================
+// VIRTUAL GAME ROUNDS
+// ============================================================
+
+model GameRound {
+  id              String        @id @default(cuid())
+  gameType        GameType
+  roundNumber     Int
+  status          RoundStatus   @default(SCHEDULED)
+
+  serverSeed      String        // private
+  serverSeedHash  String        // public commitment
+  publicSeed      String?
+
+  // Result data — varies per game
+  result          Json?
+  totalBets       Int           @default(0)
+  totalStaked     Decimal       @default(0) @db.Decimal(20, 2)
+  totalPaidOut    Decimal       @default(0) @db.Decimal(20, 2)
+
+  startedAt       DateTime?
+  settledAt       DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@unique([gameType, roundNumber])
+  @@index([gameType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("game_rounds")
+}
+
+// ============================================================
+// KYC
+// ============================================================
+
+model KYCDocument {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  documentType  String      // "ID", "PASSPORT", "DRIVER_LICENSE", "UTILITY_BILL"
+  documentUrl   String      // Cloudinary URL
+  documentNumber String?
+  cloudinaryId  String?
+
+  status        KYCStatus   @default(PENDING)
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  rejectionNote String?
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("kyc_documents")
+}
+
+// ============================================================
+// BONUSES
+// ============================================================
+
+model Bonus {
+  id                String        @id @default(cuid())
+  code              String?       @unique
+  name              String
+  description       String?
+  type              BonusType
+  amount            Decimal       @db.Decimal(20, 2)
+  percentage        Decimal?      @db.Decimal(5, 2) // for deposit-match
+  maxAmount         Decimal?      @db.Decimal(20, 2)
+  minDeposit        Decimal?      @db.Decimal(20, 2)
+
+  wagerMultiplier   Decimal       @default(1) @db.Decimal(5, 2)
+  maxBetAmount      Decimal?      @db.Decimal(20, 2)
+
+  active            Boolean       @default(true)
+  isPublic          Boolean       @default(false)
+  expiresAt         DateTime?
+  validFrom         DateTime      @default(now())
+  validUntil        DateTime?
+
+  claims            UserBonus[]
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([code])
+  @@index([active])
+  @@map("bonuses")
+}
+
+model UserBonus {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bonusId         String
+  bonus           Bonus         @relation(fields: [bonusId], references: [id], onDelete: Cascade)
+
+  amount          Decimal       @db.Decimal(20, 2)
+  amountUsed      Decimal       @default(0) @db.Decimal(20, 2)
+  wagerRequired   Decimal       @db.Decimal(20, 2)
+  wagerCompleted  Decimal       @default(0) @db.Decimal(20, 2)
+
+  status          BonusStatus   @default(ACTIVE)
+  expiresAt       DateTime
+  usedAt          DateTime?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([bonusId])
+  @@index([status])
+  @@map("user_bonuses")
+}
+
+// ============================================================
+// REFERRALS
+// ============================================================
+
+model Referral {
+  id                 String      @id @default(cuid())
+  referrerId         String
+  referrer           User        @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId         String
+  referred           User        @relation("Referred", fields: [referredId], references: [id], onDelete: Cascade)
+
+  commissionEarned   Decimal     @default(0) @db.Decimal(20, 2)
+  totalReferredBets  Decimal     @default(0) @db.Decimal(20, 2)
+  isActive           Boolean     @default(true)
+
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@unique([referrerId, referredId])
+  @@index([referrerId])
+  @@map("referrals")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?
+
+  isRead      Boolean            @default(false)
+  readAt      DateTime?
+
+  createdAt   DateTime           @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================
+// SUPPORT TICKETS
+// ============================================================
+
+model SupportTicket {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  subject       String
+  category      String?
+  status        TicketStatus    @default(OPEN)
+  priority      TicketPriority  @default(NORMAL)
+
+  assignedTo    String?
+  closedAt      DateTime?
+
+  messages      TicketMessage[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id          String          @id @default(cuid())
+  ticketId    String
+  ticket      SupportTicket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  isStaff     Boolean         @default(false)
+  message     String
+  attachments Json?
+
+  createdAt   DateTime        @default(now())
+
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+// ============================================================
+// AUDIT LOG
+// ============================================================
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  actorId     String?
+  actor       User?       @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  action      String      // e.g. "USER_BANNED", "DEPOSIT_APPROVED"
+  targetType  String?     // "User", "Deposit", "Withdrawal"
+  targetId    String?
+
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+
+  createdAt   DateTime    @default(now())
+
+  @@index([actorId])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
