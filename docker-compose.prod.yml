@@ -1,0 +1,77 @@
+# ============================================================
+# CephasGM GameZone — Production Docker Compose
+# ============================================================
+# Deploy on any VPS (DigitalOcean, Linode, Hetzner, AWS EC2, etc.)
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+# ============================================================
+
+services:
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cephasgm-backend:latest
+    container_name: cephasgm-api
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cephasgm
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: cephasgm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cephasgm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: cephasgm_gamezone
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cephasgm -d cephasgm_gamezone"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - cephasgm
+
+  redis:
+    image: redis:7-alpine
+    container_name: cephasgm-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cephasgm
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  cephasgm:
+    driver: bridge

@@ -96,3 +96,12 @@ test-*.js
 # Test artifacts
 register.json
 *.tmp.json
+
+# ------------------------------------------------------------
+# Production secrets
+# ------------------------------------------------------------
+.env.production
+.env.production.local
+test-socket.js
+.token
+register.json
