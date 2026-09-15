@@ -20,6 +20,7 @@ const logger = require('../../config/logger');
 const prisma = require('../../config/database');
 const { AppError } = require('../../utils/AppError');
 const rng = require('./rng');
+const { emitToGame } = require('../../sockets');
 
 /* ============================================================
    GAME CONFIG — timing per game type (milliseconds)
@@ -97,6 +98,14 @@ async function startRound(gameType, engineFn) {
     { gameType, roundNumber, hash: serverSeedHash.slice(0, 16) },
     `🎲 [${gameType}] Round #${roundNumber} starting (betting open)`
   );
+  emitToGame(gameType, 'game:round-start', {
+    gameType,
+    roundNumber: round.roundNumber,
+    serverSeedHash,
+    publicSeed,
+    startedAt: round.startedAt,
+    bettingMs: timings.bettingMs,
+  });
 
   return round;
 }
@@ -126,6 +135,11 @@ async function tick(engineFunctions, settleFn) {
         { gameType, roundNumber: round.roundNumber },
         `▶️  [${gameType}] Round #${round.roundNumber} in progress`
       );
+      emitToGame(gameType, 'game:round-update', {
+        gameType,
+        roundNumber: round.roundNumber,
+        phase: 'IN_PROGRESS',
+      });
     }
 
     /* -------------------- ACTIVE → SETTLEMENT ----------------- */
@@ -162,6 +176,13 @@ async function tick(engineFunctions, settleFn) {
         },
         `✅ [${gameType}] Round #${round.roundNumber} settled — seed revealed`
       );
+      emitToGame(gameType, 'game:round-update', {
+        gameType,
+        roundNumber: round.roundNumber,
+        phase: 'COMPLETED',
+        serverSeed: round.serverSeed,
+        result: round.result,
+      });
     }
 
     /* -------------------- COOLDOWN → NEXT ROUND -------------- */
