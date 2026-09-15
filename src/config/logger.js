@@ -3,10 +3,13 @@
  * CephasGM GameZone — Logger
  * ============================================================
  * Pino-based structured logger.
- *   • Development  → pretty-printed, colourised console output
+ *   • Development  → pretty console output (colourised)
  *   • Production   → single-line JSON (for log aggregators)
- *   • Test         → silent (to keep Jest output clean)
- *   • Sensitive fields auto-redacted (passwords, tokens, OTPs)
+ *   • Test         → silent (keeps Jest output clean)
+ *   • Optional     → dual output to console AND file
+ *
+ * Sensitive fields (passwords, tokens, OTPs) are automatically
+ * redacted.
  *
  * Usage:
  *   const logger = require('./logger');
@@ -18,14 +21,14 @@
 
 'use strict';
 
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
 
 const config = require('./index');
 
 /* ------------------------------------------------------------
-   Ensure the logs directory exists (only when logging to file)
+   Ensure logs directory exists when logging to a file
    ------------------------------------------------------------ */
 if (config.log.file) {
   const logDir = path.dirname(config.log.file);
@@ -60,7 +63,7 @@ const REDACT_PATHS = [
   // Response-level
   'res.headers["set-cookie"]',
 
-  // Nested objects (in case we log a User model directly)
+  // Direct fields (in case we log a User model object)
   'password',
   'passwordHash',
   'refreshToken',
@@ -78,10 +81,8 @@ const REDACT_PATHS = [
 ];
 
 /* ------------------------------------------------------------
-   Build the logger
+   Base options shared between dev and prod
    ------------------------------------------------------------ */
-
-// Base options shared between dev and prod
 const baseOptions = {
   level: config.isTest ? 'silent' : config.log.level,
   redact: {
@@ -90,22 +91,55 @@ const baseOptions = {
     remove: false,
   },
   base: {
-    // Attach static metadata to every log line
     app: config.appName,
     env: config.env,
   },
   timestamp: pino.stdTimeFunctions.isoTime,
   formatters: {
     level(label) {
-      // "info" instead of 30
       return { level: label };
     },
   },
 };
 
-// Development → pretty console output
+/* ------------------------------------------------------------
+   Build the logger
+   ------------------------------------------------------------ */
+
 let logger;
-if (config.isDev && config.log.pretty) {
+
+if (config.isTest) {
+  // Silent in tests — no output
+  logger = pino({ level: 'silent' });
+}
+else if (config.isDev && config.log.pretty && config.log.file) {
+  // Dev with file logging → multi-target: pretty console + JSON file
+  const targets = [
+    {
+      target: 'pino-pretty',
+      level: config.log.level,
+      options: {
+        colorize: true,
+        translateTime: 'SYS:HH:MM:ss.l',
+        ignore: 'pid,hostname,app,env',
+        messageFormat: '{msg}',
+        singleLine: false,
+      },
+    },
+    {
+      target: 'pino/file',
+      level: config.log.level,
+      options: {
+        destination: config.log.file,
+        mkdir: true,
+      },
+    },
+  ];
+
+  logger = pino(baseOptions, pino.transport({ targets }));
+}
+else if (config.isDev && config.log.pretty) {
+  // Dev, console only
   logger = pino({
     ...baseOptions,
     transport: {
@@ -115,45 +149,42 @@ if (config.isDev && config.log.pretty) {
         translateTime: 'SYS:HH:MM:ss.l',
         ignore: 'pid,hostname,app,env',
         messageFormat: '{msg}',
-        levelFirst: false,
         singleLine: false,
       },
     },
   });
-} else {
+}
+else if (config.log.file) {
+  // Production with file logging — JSON to stdout AND file
+  const targets = [
+    {
+      target: 'pino/file',
+      level: config.log.level,
+      options: { destination: 1 }, // 1 = stdout
+    },
+    {
+      target: 'pino/file',
+      level: config.log.level,
+      options: {
+        destination: config.log.file,
+        mkdir: true,
+      },
+    },
+  ];
+
+  logger = pino(baseOptions, pino.transport({ targets }));
+}
+else {
+  // Plain JSON logger (default production, or dev without pretty)
   logger = pino(baseOptions);
 }
 
 /* ------------------------------------------------------------
-   Optional: also write raw JSON logs to a file
+   Friendly startup note (dev only)
    ------------------------------------------------------------ */
-if (config.log.file && !config.isTest) {
-  const fileStream = pino.destination({
-    dest: config.log.file,
-    sync: false,
-    mkdir: true,
-  });
-
-  // Dual-write: pretty console + JSON file
-  const fileLogger = pino(baseOptions, fileStream);
-  const original    = logger;
-
-  // Wrap the main logger methods to also write to file
-  ['fatal', 'error', 'warn', 'info', 'debug', 'trace'].forEach((level) => {
-    logger[level] = (obj, msg) => {
-      original[level](obj, msg);
-      fileLogger[level](obj, msg);
-    };
-  });
-}
-
-/* ------------------------------------------------------------
-   Friendly startup banner (dev only)
-   ------------------------------------------------------------ */
-if (config.isDev) {
+if (config.isDev && !config.isTest) {
   logger.debug(
-    `Logger initialised — level=${config.log.level} ` +
-    `pretty=${config.log.pretty} file=${config.log.file || 'none'}`
+    `Logger initialised — level=${config.log.level} pretty=${config.log.pretty} file=${config.log.file || 'none'}`
   );
 }
 
