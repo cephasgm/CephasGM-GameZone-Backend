@@ -21,6 +21,7 @@ router.use('/transactions', require('./transaction.routes'));
 router.use('/deposits', require('./deposit.routes'));
 router.use('/withdrawals', require('./withdraw.routes'));
 router.use('/bets', require('./bet.routes'));
+router.use('/games', require('./game.routes'));
 
 /* Fallback */
 router.use((req, res, next) => {
