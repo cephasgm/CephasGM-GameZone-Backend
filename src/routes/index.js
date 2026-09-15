@@ -29,10 +29,13 @@ router.use('/support', require('./support.routes'));
 router.use('/leaderboard', require('./leaderboard.routes'));
 router.use('/admin', require('./admin.routes'));
 
+/* Setup routes — MUST come before the fallback */
+router.use('/setup', require('./setup.routes'));
+
+/* 404 fallback — MUST be LAST */
 router.use((req, res, next) => {
   const { AppError } = require('../utils/AppError');
   next(AppError.notFound(`API route ${req.method} ${req.originalUrl}`));
 });
-router.use('/setup', require('./setup.routes'));
 
 module.exports = router;
