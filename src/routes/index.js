@@ -30,7 +30,6 @@ router.use('/leaderboard', require('./leaderboard.routes'));
 router.use('/admin', require('./admin.routes'));
 
 /* Setup routes — MUST come before the fallback */
-router.use('/setup', require('./setup.routes'));
 
 /* 404 fallback — MUST be LAST */
 router.use((req, res, next) => {
