@@ -84,3 +84,12 @@ docker-compose.override.yml
 *.pid
 *.seed
 node_modules/.cache/
+
+# ------------------------------------------------------------
+# Temporary debug / test files
+# ------------------------------------------------------------
+diag.js
+pgtest.js
+tmp-*.js
+test-*.js
+!tests/**/*.js
