@@ -119,6 +119,7 @@ const envSchema = z.object({
   BET_RATE_LIMIT_MAX: toInt(30),
 
   /* ---------- EMAIL ---------- */
+  RESEND_API_KEY: z.string().optional().default(''),
   MAIL_HOST: z.string().default('smtp.gmail.com'),
   MAIL_PORT: toInt(587),
   MAIL_SECURE: toBool(false),
@@ -296,7 +297,7 @@ const config = Object.freeze({
   },
 
   /* ---------- Email ---------- */
-  mail: {
+    mail: {
     host: env.MAIL_HOST,
     port: env.MAIL_PORT,
     secure: env.MAIL_SECURE,
@@ -304,7 +305,9 @@ const config = Object.freeze({
     password: env.MAIL_PASSWORD,
     fromName: env.MAIL_FROM_NAME,
     fromAddress: env.MAIL_FROM_ADDRESS,
+    resendApiKey: env.RESEND_API_KEY,
     enabled: Boolean(env.MAIL_USER && env.MAIL_PASSWORD),
+    resendEnabled: Boolean(env.RESEND_API_KEY),
   },
 
   /* ---------- SMS ---------- */
