@@ -24,6 +24,9 @@ router.use('/games', require('./game.routes'));
 router.use('/kyc', require('./kyc.routes'));
 router.use('/bonuses', require('./bonus.routes'));
 router.use('/referrals', require('./referral.routes'));
+router.use('/notifications', require('./notification.routes'));
+router.use('/support', require('./support.routes'));
+router.use('/leaderboard', require('./leaderboard.routes'));
 
 router.use((req, res, next) => {
   const { AppError } = require('../utils/AppError');
